@@ -1,5 +1,7 @@
 ```markdown
 # ARPHost Backup Script (Bash)
+# We use this to backup local files and SQL Databases on servers and securely transfer them offsite.
+If you need support or services check out https://arphost.com
 
 This backup system creates a **single compressed archive** containing:
 
