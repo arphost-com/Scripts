@@ -3,8 +3,10 @@ set -euo pipefail
 
 # -------------------------------------------------------------------
 # compose-manager.sh
-# Discover + manage docker compose projects under a root directory.
-# Supports .inactive marker files to skip projects by default.
+# Discover + manage Docker Compose projects under a root directory.
+# Supports .inactive marker files to skip projects by default,
+# and provides convenience commands:
+#   inactive on <project> / inactive off <project>
 # -------------------------------------------------------------------
 
 # Defaults
@@ -38,22 +40,28 @@ usage() {
   cat <<EOF
 Usage:
   $(basename "$0") [global options] <command> [project ...]
+
 Commands:
-  list            List discovered projects + running containers per project
-  status          Show 'docker compose ps' per project
-  check           Check for image updates (pull + summarized report; no up)
-  pull            Pull images for projects
-  update          Pull + up -d for projects
-  restart         Restart services for projects
-  down            docker compose down for projects
-  prune           Run docker prune (images, networks, volumes)
+  list                  List discovered projects + running containers per project
+  status                Show 'docker compose ps' per project
+  check                 Check for image updates (pull + summarized report; no up)
+  pull                  Pull images for projects
+  update                Pull + up -d for projects
+  restart               Restart services for projects
+  down                  docker compose down for projects
+  prune                 Run docker prune (images, networks, volumes)
+
+Inactive management:
+  inactive list         List projects marked inactive
+  inactive on  <name>   Mark a project inactive (creates .inactive)
+  inactive off <name>   Mark a project active (removes .inactive)
 
 Global options:
   -r, --root <path>        Root folder containing projects (default: /docker)
   -x, --exclude <name>     Exclude a project by folder name (repeatable)
   -o, --only <name>        Only include a project by folder name (repeatable)
-      --include-inactive   Include projects with a .inactive marker file
-      --only-inactive      Only include projects with a .inactive marker file
+      --include-inactive   Include projects with .inactive marker (normally skipped)
+      --only-inactive      Only include projects with .inactive marker
   -n, --dry-run            Show what would be done (no changes)
   -p, --prune              Run prune at the end (after pull/update/etc.)
   -v, --verbose            More output (shows skip reasons)
@@ -62,10 +70,8 @@ Global options:
 Notes:
   - A project is any directory (ROOT itself or one level below ROOT) containing:
       compose.yml | compose.yaml | docker-compose.yml | docker-compose.yaml
-  - To mark a project inactive:
-      touch <project>/.inactive
-    To re-enable:
-      rm <project>/.inactive
+  - Mark a project inactive by creating:
+      <project>/.inactive
 
 Examples:
   $(basename "$0") --root /home/bstetler/docker list
@@ -73,8 +79,8 @@ Examples:
   $(basename "$0") --root /home/bstetler/docker update sonarr radarr
   $(basename "$0") --root /home/bstetler/docker --exclude homeassistant update
   $(basename "$0") --root /home/bstetler/docker check
-  $(basename "$0") --root /home/bstetler/docker --include-inactive list
-  $(basename "$0") --root /home/bstetler/docker --only-inactive list
+  $(basename "$0") --root /home/bstetler/docker inactive on stable-diffusion-webui
+  $(basename "$0") --root /home/bstetler/docker inactive off stable-diffusion-webui
 EOF
 }
 
@@ -125,7 +131,6 @@ compose_cmd() {
   local cf
   cf="$(compose_file_for_dir "$dir")"
   [[ -n "$cf" ]] || return 1
-  # Set -p to folder name so each folder is its own project name
   echo "docker compose -f \"$cf\" -p \"$(basename "$dir")\""
 }
 
@@ -187,6 +192,24 @@ filter_projects() {
   printf '%s\n' "${out[@]}"
 }
 
+project_dir_by_name() {
+  # Finds a project directory by folder name (within discovery scope)
+  local name="$1"
+  local -a all=()
+  while IFS= read -r p; do all+=("$p"); done < <(discover_projects "$ROOT")
+
+  local p base
+  for p in "${all[@]}"; do
+    base="$(basename "$p")"
+    if [[ "$base" == "$name" ]]; then
+      echo "$p"
+      return 0
+    fi
+  done
+
+  echo ""
+}
+
 running_containers_for_project() {
   local dir="$1"
   local ccmd
@@ -202,16 +225,16 @@ cmd_list() {
   log_hdr
 
   for dir in "${projects[@]}"; do
-    local name inactive
+    local name inactive_tag
     name="$(basename "$dir")"
-    inactive=""
-    is_inactive_project "$dir" && inactive=" ${YELLOW}[inactive]${NC}"
+    inactive_tag=""
+    is_inactive_project "$dir" && inactive_tag=" ${YELLOW}[inactive]${NC}"
 
     local ccmd
     ccmd="$(compose_cmd "$dir" || true)"
     [[ -n "$ccmd" ]] || { (( VERBOSE )) && warn "Skipping (no compose file): $dir"; continue; }
 
-    project_header "${name}${inactive}" "$dir"
+    project_header "${name}${inactive_tag}" "$dir"
 
     local ids
     ids="$(running_containers_for_project "$dir")"
@@ -229,16 +252,16 @@ cmd_list() {
 cmd_status() {
   local -a projects=("$@")
   for dir in "${projects[@]}"; do
-    local name inactive
+    local name inactive_tag
     name="$(basename "$dir")"
-    inactive=""
-    is_inactive_project "$dir" && inactive=" ${YELLOW}[inactive]${NC}"
+    inactive_tag=""
+    is_inactive_project "$dir" && inactive_tag=" ${YELLOW}[inactive]${NC}"
 
     local ccmd
     ccmd="$(compose_cmd "$dir" || true)"
     [[ -n "$ccmd" ]] || { (( VERBOSE )) && warn "Skipping (no compose file): $dir"; continue; }
 
-    project_header "${name}${inactive}" "$dir"
+    project_header "${name}${inactive_tag}" "$dir"
     run "bash -lc '$ccmd ps'"
   done
 }
@@ -246,16 +269,16 @@ cmd_status() {
 cmd_pull() {
   local -a projects=("$@")
   for dir in "${projects[@]}"; do
-    local name inactive
+    local name inactive_tag
     name="$(basename "$dir")"
-    inactive=""
-    is_inactive_project "$dir" && inactive=" ${YELLOW}[inactive]${NC}"
+    inactive_tag=""
+    is_inactive_project "$dir" && inactive_tag=" ${YELLOW}[inactive]${NC}"
 
     local ccmd
     ccmd="$(compose_cmd "$dir" || true)"
     [[ -n "$ccmd" ]] || { (( VERBOSE )) && warn "Skipping (no compose file): $dir"; continue; }
 
-    project_header "Pulling: ${name}${inactive}" "$dir"
+    project_header "Pulling: ${name}${inactive_tag}" "$dir"
     run "bash -lc '$ccmd pull'"
   done
 }
@@ -263,16 +286,16 @@ cmd_pull() {
 cmd_update() {
   local -a projects=("$@")
   for dir in "${projects[@]}"; do
-    local name inactive
+    local name inactive_tag
     name="$(basename "$dir")"
-    inactive=""
-    is_inactive_project "$dir" && inactive=" ${YELLOW}[inactive]${NC}"
+    inactive_tag=""
+    is_inactive_project "$dir" && inactive_tag=" ${YELLOW}[inactive]${NC}"
 
     local ccmd
     ccmd="$(compose_cmd "$dir" || true)"
     [[ -n "$ccmd" ]] || { (( VERBOSE )) && warn "Skipping (no compose file): $dir"; continue; }
 
-    project_header "Updating: ${name}${inactive}" "$dir"
+    project_header "Updating: ${name}${inactive_tag}" "$dir"
     run "bash -lc '$ccmd pull'"
     run "bash -lc '$ccmd up -d'"
   done
@@ -281,16 +304,16 @@ cmd_update() {
 cmd_restart() {
   local -a projects=("$@")
   for dir in "${projects[@]}"; do
-    local name inactive
+    local name inactive_tag
     name="$(basename "$dir")"
-    inactive=""
-    is_inactive_project "$dir" && inactive=" ${YELLOW}[inactive]${NC}"
+    inactive_tag=""
+    is_inactive_project "$dir" && inactive_tag=" ${YELLOW}[inactive]${NC}"
 
     local ccmd
     ccmd="$(compose_cmd "$dir" || true)"
     [[ -n "$ccmd" ]] || { (( VERBOSE )) && warn "Skipping (no compose file): $dir"; continue; }
 
-    project_header "Restarting: ${name}${inactive}" "$dir"
+    project_header "Restarting: ${name}${inactive_tag}" "$dir"
     run "bash -lc '$ccmd restart'"
   done
 }
@@ -298,16 +321,16 @@ cmd_restart() {
 cmd_down() {
   local -a projects=("$@")
   for dir in "${projects[@]}"; do
-    local name inactive
+    local name inactive_tag
     name="$(basename "$dir")"
-    inactive=""
-    is_inactive_project "$dir" && inactive=" ${YELLOW}[inactive]${NC}"
+    inactive_tag=""
+    is_inactive_project "$dir" && inactive_tag=" ${YELLOW}[inactive]${NC}"
 
     local ccmd
     ccmd="$(compose_cmd "$dir" || true)"
     [[ -n "$ccmd" ]] || { (( VERBOSE )) && warn "Skipping (no compose file): $dir"; continue; }
 
-    project_header "Stopping: ${name}${inactive}" "$dir"
+    project_header "Stopping: ${name}${inactive_tag}" "$dir"
     run "bash -lc '$ccmd down'"
   done
 }
@@ -319,16 +342,16 @@ cmd_check() {
   log_hdr
 
   for dir in "${projects[@]}"; do
-    local name inactive
+    local name inactive_tag
     name="$(basename "$dir")"
-    inactive=""
-    is_inactive_project "$dir" && inactive=" ${YELLOW}[inactive]${NC}"
+    inactive_tag=""
+    is_inactive_project "$dir" && inactive_tag=" ${YELLOW}[inactive]${NC}"
 
     local ccmd
     ccmd="$(compose_cmd "$dir" || true)"
     [[ -n "$ccmd" ]] || { (( VERBOSE )) && warn "Skipping (no compose file): $dir"; continue; }
 
-    project_header "Checking: ${name}${inactive}" "$dir"
+    project_header "Checking: ${name}${inactive_tag}" "$dir"
 
     if (( DRY_RUN )); then
       say "${CYAN}[dry-run]${NC} would run: $ccmd pull"
@@ -346,7 +369,6 @@ cmd_check() {
       say "${YELLOW}Pull output was inconclusive (see lines below).${NC}"
     fi
 
-    # Show the most relevant lines
     echo "$out" | grep -E 'Downloaded newer image|Pull complete|Image is up to date|Already exists|error|Error' || true
   done
 }
@@ -356,6 +378,64 @@ do_prune() {
   run "yes | docker image prune"
   run "yes | docker network prune"
   run "yes | docker volume prune"
+}
+
+cmd_inactive_list() {
+  local -a all=()
+  while IFS= read -r p; do all+=("$p"); done < <(discover_projects "$ROOT")
+
+  say "${YELLOW}Inactive projects under:${NC} ${MAGENTA}${ROOT}${NC}"
+  log_hdr
+
+  local found=0
+  for dir in "${all[@]}"; do
+    if is_inactive_project "$dir"; then
+      found=1
+      say "  - ${MAGENTA}$(basename "$dir")${NC}  (${dir})"
+    fi
+  done
+
+  if (( ! found )); then
+    say "${CYAN}None marked inactive.${NC}"
+  fi
+}
+
+cmd_inactive_on() {
+  local name="${1:-}"
+  [[ -n "$name" ]] || { err "inactive on requires a project name"; exit 1; }
+
+  local dir
+  dir="$(project_dir_by_name "$name")"
+  [[ -n "$dir" ]] || { err "Project not found under $ROOT: $name"; exit 1; }
+
+  if (( DRY_RUN )); then
+    say "${CYAN}[dry-run]${NC} would create: $dir/$INACTIVE_MARKER"
+    return 0
+  fi
+
+  touch "$dir/$INACTIVE_MARKER"
+  say "${GREEN}Marked inactive:${NC} ${MAGENTA}$name${NC}  (created $INACTIVE_MARKER)"
+}
+
+cmd_inactive_off() {
+  local name="${1:-}"
+  [[ -n "$name" ]] || { err "inactive off requires a project name"; exit 1; }
+
+  local dir
+  dir="$(project_dir_by_name "$name")"
+  [[ -n "$dir" ]] || { err "Project not found under $ROOT: $name"; exit 1; }
+
+  if (( DRY_RUN )); then
+    say "${CYAN}[dry-run]${NC} would remove: $dir/$INACTIVE_MARKER"
+    return 0
+  fi
+
+  if [[ -f "$dir/$INACTIVE_MARKER" ]]; then
+    rm -f "$dir/$INACTIVE_MARKER"
+    say "${GREEN}Marked active:${NC} ${MAGENTA}$name${NC}  (removed $INACTIVE_MARKER)"
+  else
+    say "${CYAN}Already active:${NC} ${MAGENTA}$name${NC}  (no $INACTIVE_MARKER found)"
+  fi
 }
 
 # -----------------------------
@@ -387,9 +467,23 @@ while [[ $# -gt 0 ]]; do
 done
 
 CMD="${1:-}"; shift || true
-CLI_PROJECTS=("$@")
 
 need_bin docker
+
+# Special: inactive subcommands don’t need full filtering logic
+if [[ "$CMD" == "inactive" ]]; then
+  sub="${1:-}"; shift || true
+  case "$sub" in
+    list) cmd_inactive_list ;;
+    on)   cmd_inactive_on "${1:-}" ;;
+    off)  cmd_inactive_off "${1:-}" ;;
+    *) err "Unknown inactive command: ${sub:-<none>}"; usage; exit 1 ;;
+  esac
+  exit 0
+fi
+
+# Remaining args are project names
+CLI_PROJECTS=("$@")
 
 # Discover + filter
 ALL_PROJECTS=()
@@ -408,9 +502,7 @@ if [[ ${#PROJECTS[@]} -eq 0 ]]; then
   exit 1
 fi
 
-# -----------------------------
 # Execute command
-# -----------------------------
 case "$CMD" in
   list)    cmd_list "${PROJECTS[@]}" ;;
   status)  cmd_status "${PROJECTS[@]}" ;;
@@ -419,7 +511,7 @@ case "$CMD" in
   update)  cmd_update "${PROJECTS[@]}" ;;
   restart) cmd_restart "${PROJECTS[@]}" ;;
   down)    cmd_down "${PROJECTS[@]}" ;;
-  prune)   DO_PRUNE=1; cmd_list "${PROJECTS[@]}" ;;  # prune-only still shows what's selected
+  prune)   DO_PRUNE=1; cmd_list "${PROJECTS[@]}" ;;
   *)
     err "Unknown command: $CMD"
     usage
