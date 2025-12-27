@@ -34,171 +34,131 @@ It automatically discovers Compose projects, lets you manage them in bulk, shows
 ```bash
 chmod +x compose-manager.sh
 sudo install -m 0755 compose-manager.sh /usr/local/sbin/compose-manager.sh
+```
 
+---
 
-⸻
-
-Usage
+## Usage
 
 Always specify the root directory that contains your Docker Compose projects.
 
 Example root:
 
+```
 /home/bstetler/docker
+```
 
+---
 
-⸻
+## List projects and running containers
 
-List projects and running containers
-
-Displays all discovered Compose projects and lists running containers per project.
-Inactive projects are skipped by default.
-
+```bash
 compose-manager.sh --root /home/bstetler/docker list
+```
 
+---
 
-⸻
+## Show Compose status per project
 
-Show Compose status per project
-
-Runs docker compose ps for each project.
-
+```bash
 compose-manager.sh --root /home/bstetler/docker status
+```
 
+---
 
-⸻
+## Check for image updates (pull only, no restart)
 
-Check for image updates (pull only, no restart)
-
-Checks for updated images by running docker compose pull.
-Images may be downloaded, but containers are not restarted.
-
+```bash
 compose-manager.sh --root /home/bstetler/docker check
+```
 
+---
 
-⸻
+## Pull images only
 
-Pull images only
-
-Pulls images for all selected projects without restarting containers.
-
+```bash
 compose-manager.sh --root /home/bstetler/docker pull
+```
 
+---
 
-⸻
+## Update everything (pull + up -d)
 
-Update everything (pull + up -d)
-
-Pulls images and applies updates using docker compose up -d.
-
+```bash
 compose-manager.sh --root /home/bstetler/docker update
+```
 
+---
 
-⸻
+## Update specific projects
 
-Update specific projects
-
-Only updates the specified project directories.
-
+```bash
 compose-manager.sh --root /home/bstetler/docker update sonarr radarr overseerr
+```
 
+---
 
-⸻
+## Restart projects
 
-Restart projects
-
-Restarts containers for selected projects.
-
+```bash
 compose-manager.sh --root /home/bstetler/docker restart
+```
 
-Restart a single project:
+---
 
-compose-manager.sh --root /home/bstetler/docker restart homeassistant
+## Stop projects (docker compose down)
 
-
-⸻
-
-Stop projects (docker compose down)
-
-Stops and removes containers for selected projects.
-
+```bash
 compose-manager.sh --root /home/bstetler/docker down
+```
 
+---
 
-⸻
+## Exclude projects
 
-Exclude projects
-
-Exclude one or more projects by directory name.
-
+```bash
 compose-manager.sh --root /home/bstetler/docker --exclude homeassistant --exclude ollama update
+```
 
+---
 
-⸻
+## Include only specific projects
 
-Include only specific projects
-
-Limit actions to only the listed projects.
-
+```bash
 compose-manager.sh --root /home/bstetler/docker --only sonarr --only radarr update
+```
 
+---
 
-⸻
+## Dry-run mode
 
-Dry-run mode
-
-Shows what commands would be executed without making any changes.
-
+```bash
 compose-manager.sh --root /home/bstetler/docker --dry-run update
+```
 
+---
 
-⸻
+## Inactive Projects
 
-Inactive Projects
-
-Projects can be marked inactive using a .inactive marker file.
-Inactive projects are ignored by default.
-
-Mark a project inactive
-
+```bash
 compose-manager.sh --root /home/bstetler/docker inactive on stable-diffusion-webui
-
-Mark a project active again
-
 compose-manager.sh --root /home/bstetler/docker inactive off stable-diffusion-webui
-
-List inactive projects
-
 compose-manager.sh --root /home/bstetler/docker inactive list
+```
 
-Include inactive projects in commands
+---
 
-compose-manager.sh --root /home/bstetler/docker --include-inactive list
-compose-manager.sh --root /home/bstetler/docker --include-inactive update
+## Pruning
 
-
-⸻
-
-Pruning
-
-Pruning removes unused Docker images, networks, and volumes.
-
-Prune after another command
-
+```bash
 compose-manager.sh --root /home/bstetler/docker update --prune
-
-Prune by itself
-
 compose-manager.sh --root /home/bstetler/docker prune
+```
 
+---
 
-⸻
+## Requirements
 
-Requirements
-	•	Docker installed and working
-	•	Docker Compose v2 plugin
-
+```bash
 docker compose version
-
-
-⸻
+```
