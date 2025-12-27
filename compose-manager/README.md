@@ -33,7 +33,7 @@ It automatically discovers Compose projects, lets you manage them in bulk, shows
 
 ```bash
 chmod +x compose-manager.sh
-sudo install -m 0755 compose-manager.sh /usr/local/sbin/compose-manager.sh
+sudo install -m 0755 compose-manager.sh /usr/local/bin/compose-manager.sh
 ```
 
 ---
